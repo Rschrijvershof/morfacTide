@@ -1,33 +1,37 @@
 function OUT = morphoTide(input,lat,varargin)
 % Morphological tide toolbox (morphoTide)
+%
+% OUT = morphotide(input,lat,varargin)
+%
 % Tool box returns a representative tidal signal determined from a tidal
 % input signal. The input signal needs to be a scalar vector. This can be,
 % for example, tidal water levels or velocity magnitudes.
 % Function requires equidistant time-interval of the input signal.
 %
 % Options for the output are a representative spring-neap cycle
-% (Schrijvershof et al, 2022) or a representative double tide (Lesser, 2009)
-%
+% (Schrijvershof et al., 2022) or a representative double tide (Lesser, 2009)
 %
 % INPUT:
-% input     Mx2 numeric array [time,val] consisting of
-%           - time: array of matlab datenum values
-%           - val:  array of values (water level heights or velocity magnitudes)
-%           OR
-%           Mx3 cell array consisting of
-%           - Constituents names (e.g. M2, M4 etc.)
-%           - Constituents amplitudes (in m)
-%           - Constituents phases (in degree)
-% lat       Latitude (for nodal corrections in tidal analysis)
+% input         Mx2 numeric array [time,val] consisting of
+%               - time: array of matlab datenum values
+%               - val:  array of values (water level heights or velocity magnitudes)
+%               OR
+%               Mx3 cell array consisting of
+%               - Constituents names (e.g. M2, M4 etc.)
+%               - Constituents amplitudes (in m)
+%               - Constituents phases (in degree)
+% lat           Latitude (for nodal corrections in tidal analysis)
 % Optional:
-% type      'springneap' or 'doubletide'
-% typeSpec  '' or 'const'
-% tStart    Moment to start the representative signal (in datenum)
-% timeSpan  Timespan to be modelled in  morphological years
-%           (e.g. 10 years)
-% nCyles    Number of cycles (repetitions) of the representative signal
-% morfac    Morphological acceleration factor used
-% plot      0 or 1 (default 0)
+% type          'springneap' or 'doubletide'
+% typeSpec      '' or 'const'
+% ntrScaling    Swith to apply a scaling factor on M2 amplitude
+% tStart        Moment to start the representative signal (in datenum)
+% nCyles        Number of cycles (repetitions) of the representative signal
+% morfac        Morphological acceleration factor used
+% timeSpan      Timespan to be modelled in  morphological years
+%               (e.g. 10 years)
+
+% plot          0 or 1 (default 0)
 %
 %
 % OUTPUT:
@@ -52,6 +56,7 @@ OPT.tStop       = datenum(2019,01,01);
 OPT.timeSpan    = [];
 OPT.nCycles     = 2;
 OPT.morfac      = [];
+OPT.ntrScaling  = 0;  
 OPT.plot        = 0;
 
 if nargin > 2
@@ -68,7 +73,7 @@ end
 % Set-up struct
 OUT = struct;
 
-%% Check the input
+% Check the input
 
 % Time vector (days, hours, and seconds)
 if isnumeric(input)
@@ -80,7 +85,7 @@ OUT.th      = OUT.td*24;
 OUT.ts      = OUT.td*24*60*60;
 
 
-% Tidal analysis and rewrite tidal constituents
+%% Tidal analysis and rewrite tidal constituents
 const = [];
 if isnumeric(input)
     
@@ -346,16 +351,16 @@ switch OPT.type
         
         % 3.
         SN.mor.ts = (0:Tmor)';
+        SN.mor.th = SN.mor.ts/60/60;
         SN.mor.td = SN.mor.ts/60/60/24;
         
         % Caclulate a component Dsn that mimics the spring-neap variation
         % during the cyle
         SN.Dsn.omega    = (2*pi)/Tmor;
         SN.Dsn.Avar     = SN.D2.A(2) * cos(SN.Dsn.omega.*SN.mor.ts - pi); % -pi to start with neap tide
-        SN.Dsn.Avar2    = SN.D2.A(2) * cos(SN.Dsn.omega.*OUT.ts - SN.D2.phi(2)-pi); % to synchronize with original signal
         
         % To check: Very small rounding differences can cause the end of
-        % the singal not to coicide with the beginning of the signal. This
+        % the signal not to coincide with the beginning of the signal. This
         % is solved by making Avar exactly symmetric
         SN.Dsn.Avar  = round(SN.Dsn.Avar,4);
         
@@ -376,10 +381,12 @@ switch OPT.type
         %         SN.C1.A = SN.D1.A(1);
         %         SN.C1.phi = SN.D1.phi(1);
         
-        % Amplification of M2, following Lesser (2009) equation 5.16
-        % sqrt((Aconst^2 - Ac1^2) / Am2^2)
-        SN.D2.ampfac = sqrt((sum(const.amp.^2)-SN.C1.A^2)/SN.D2.A(1)^2);
-        SN.D2.A(1) = SN.D2.A(1)*SN.D2.ampfac;
+        if OPT.ntrScaling
+            % Amplification of M2, following Lesser (2009) equation 5.16
+            % sqrt((Aconst^2 - Ac1^2) / Am2^2)
+            SN.D2.ampfac = sqrt((sum(const.amp.^2)-SN.C1.A^2)/SN.D2.A(1)^2);
+            SN.D2.A(1) = SN.D2.A(1)*SN.D2.ampfac;
+        end
         
         
         
@@ -438,51 +445,84 @@ switch OPT.type
             (SN.D6.A(1)) .* cos(SN.D6.omega(1).*SN.mor.ts - SN.D6.phi(1)) + ...
             (SN.D8.A(1)) .* cos(SN.D8.omega(1).*SN.mor.ts - SN.D8.phi(1));
         
-        %% Scaling
-        % Scaling of semi-diurnal amplitude
-        val1 = OUT.valTide;
-        dx        = 0.2; % Bin interval
-        fac = 0.5:0.01:1.5;
+        %% Scaling procedure
+        
+        % Rewrite and calculate dzdt
+        Z1       = OUT.valTide;
+        dZdt1    = diff(Z1)/(diff(OUT.th(1:2)));
+        dZdt1(end+1) = NaN; % Equal array as Z1 required
+        Zdx      = 0.2; % Bin interval
+        dZdtdx   = 1/6;
+        
+        % Set-up the binning intervals (exactly symmetric around 0)
+        Zlim    = max(abs([floor(min(Z1)/Zdx),ceil(max(Z1)/Zdx)]));
+        Zlim    = Zlim+1;
+        Zedges  = Zlim*-Zdx:Zdx:Zlim*Zdx;
+        Zbins   = Zedges(1:end-1)+(diff(Zedges)./2);
+        
+        dZdtlim    = max(abs([floor(min(dZdt1)/dZdtdx),ceil(max(dZdt1)/dZdtdx)]));
+        dZdtlim    = dZdtlim+1;
+        dZdtedges  = dZdtlim*-dZdtdx:dZdtdx:dZdtlim*dZdtdx;
+        dZdtbins   = dZdtedges(1:end-1)+(diff(dZdtedges)./2);
+        
+        % Bivariate histogram of full tidal signal
+        data1 = histcounts2(Z1,dZdt1,Zedges,dZdtedges,'Normalization','probability');
+        
+        %%% Scaling of semi-diurnal amplitude
+        fac = 0.5:0.05:1.5;
         ERR = NaN(length(fac),1);
         for k = 1:length(fac)
-            val2 = ...
+            clear Z2 dZdt2
+            % Construct the signal with amplification factor
+            Z2 = ...
                 (SN.C1.A) .* cos(SN.C1.omega.*SN.mor.ts - SN.C1.phi) + ...
                 (fac(k) * SN.D2.A(1) + SN.Dsn.Avar) .* cos(SN.D2.omega(1).*SN.mor.ts - SN.D2.phi(1)) + ...
                 (SN.D4.A(1)) .* cos(SN.D4.omega(1).*SN.mor.ts - SN.D4.phi(1)) + ...
                 (SN.D6.A(1)) .* cos(SN.D6.omega(1).*SN.mor.ts - SN.D6.phi(1)) + ...
                 (SN.D8.A(1)) .* cos(SN.D8.omega(1).*SN.mor.ts - SN.D8.phi(1));
-            edges   = round(min([val1;val2]),1,'decimals')-dx:dx:round(max([val1;val2]),1,'decimals')+dx;
-            bins    = edges(1:end-1)+diff(edges);
-            data1 = histcounts(val1,edges,'Normalization','probability');
-            data2 = histcounts(val2,edges,'Normalization','probability');
+            dZdt2 = diff(Z2)/(diff(SN.mor.th(1:2)));
+            dZdt2(end+1) = NaN;
+            
+            % Bivariate histogram of synthetic cycle
+            data2 = histcounts2(Z2,dZdt2,Zedges,dZdtedges,'Normalization','probability');
+            
             % RMSE
-            ERR(k,1) = sqrt( sum((data2-data1).^2) / length(data1));
+            ERR(k,1) = sqrt( sum((data2(:)-data1(:)).^2) / length(data1(:)));
         end
+        
+        % Apply the best factor
         [~,id] = min(ERR);
         fD2 = fac(id);
-        SN.mor.hC1fD2modD4D6D8 = ...
+        SN.mor.Cycle = ...
             (SN.C1.A) .* cos(SN.C1.omega.*SN.mor.ts - SN.C1.phi) + ...
             (fD2 * SN.D2.A(1) + SN.Dsn.Avar) .* cos(SN.D2.omega(1).*SN.mor.ts - SN.D2.phi(1)) + ...
             (SN.D4.A(1)) .* cos(SN.D4.omega(1).*SN.mor.ts - SN.D4.phi(1)) + ...
             (SN.D6.A(1)) .* cos(SN.D6.omega(1).*SN.mor.ts - SN.D6.phi(1)) + ...
             (SN.D8.A(1)) .* cos(SN.D8.omega(1).*SN.mor.ts - SN.D8.phi(1));
-        % Scaling of quarter-diurnal amplitude
+        
+        
+        %%% Scaling of quarter-diurnal amplitude
         ERR = NaN(length(fac),1);
         for k = 1:length(fac)
-            val2 = ...
+            clear Z2 dZdt2
+            Z2 = ...
                 (SN.C1.A) .* cos(SN.C1.omega.*SN.mor.ts - SN.C1.phi) + ...
                 (fD2 * SN.D2.A(1) + SN.Dsn.Avar) .* cos(SN.D2.omega(1).*SN.mor.ts - SN.D2.phi(1)) + ...
                 (fac(k) * SN.D4.A(1)) .* cos(SN.D4.omega(1).*SN.mor.ts - SN.D4.phi(1)) + ...
                 (SN.D6.A(1)) .* cos(SN.D6.omega(1).*SN.mor.ts - SN.D6.phi(1)) + ...
                 (SN.D8.A(1)) .* cos(SN.D8.omega(1).*SN.mor.ts - SN.D8.phi(1));
+            dZdt2 = diff(Z2)/(diff(SN.mor.th(1:2)));
+            dZdt2(end+1) = NaN;
             
-            edges   = round(min([val1;val2]),1,'decimals')-dx:dx:round(max([val1;val2]),1,'decimals')+dx;
-            bins    = edges(1:end-1)+diff(edges);
-            data1 = histcounts(val1,edges,'Normalization','probability');
-            data2 = histcounts(val2,edges,'Normalization','probability');
+
+            % Bivariate histogram of synthetic cycle
+            data2 = histcounts2(Z2,dZdt2,Zedges,dZdtedges,'Normalization','probability');
+            
             % RMSE
-            ERR(k,1) = sqrt( sum((data2-data1).^2) / length(data1));
+            ERR(k,1) = sqrt( sum((data2(:)-data1(:)).^2) / length(data1(:)));
         end
+        
+        % Apply the best factor
         [~,id] = min(ERR);
         fD4 = fac(id);
         SN.mor.hC1fD2modfD4D6D8 = ...
@@ -564,10 +604,12 @@ switch OPT.type
         D.mor.C1.cel    = 0.5*D.mor.M2.cel;
         D.mor.C1.vel    = 1/D.mor.C1.cel*360*60;
         
-        % Amplification of M2, following Lesser (2009) equation 5.16
-        % sqrt((Aconst^2 - Ac1^2) / Am2^2)
-        D.ampfac = sqrt((sum(D.amps.^2)-D.mor.C1.amp.^2)/D.mor.M2.amp.^2);
-        D.mor.M2.amp = D.mor.M2.amp*D.ampfac;
+        if OPT.ntrScaling
+            % Amplification of M2, following Lesser (2009) equation 5.16
+            % sqrt((Aconst^2 - Ac1^2) / Am2^2)
+            D.ampfac = sqrt((sum(D.amps.^2)-D.mor.C1.amp.^2)/D.mor.M2.amp.^2);
+            D.mor.M2.amp = D.mor.M2.amp*D.ampfac;
+        end
         
         
         % Rewrite
@@ -603,21 +645,19 @@ switch OPT.type
         fprintf('\tNo type defined\n');
 end
 
-%% Figures settings
+%% Figure settings
 
-
-
-
-%% Figure of power spectrum
-if OPT.plot
-    
 % Some general plotsettings
 set(0,'DefaultTextInterpreter','latex')
 set(0,'DefaultLegendInterpreter','latex')
 set(0,'DefaultAxesTickLabelInterpreter','latex')
 set(0,'DefaultLegendInterpreter','latex');
 
+if OPT.plot
     
+
+
+    % Figure of power spectrum    
     %                         close all;
     %                         fig = figure; fig.Units = 'centimeters'; fig.Position = [5 5 12 10];
     %                         axs = tight_subplot(1,1,0.5,[0.15,0.05],[0.15,0.05]);
@@ -730,14 +770,14 @@ set(0,'DefaultLegendInterpreter','latex');
     xlabel('Dur. rising tide (hrs)')
 
     set(fig,'CurrentAxes',axs(6)); hold on; box on; ax = gca;
-    dzdt1 = diff(val1)./(diff(OUT.td)*24);
+    dZdt1 = diff(val1)./(diff(OUT.td)*24);
     dzdt2 = diff(val2)./(diff(OUT.td)*24);
     
     dx      = 1/6; % Bin interval
-    edges   = round(min([dzdt1;dzdt2]),1,'decimals')-2*dx:dx:round(max([dzdt1;dzdt2]),1,'decimals')+2*dx;
+    edges   = round(min([dZdt1;dzdt2]),1,'decimals')-2*dx:dx:round(max([dZdt1;dzdt2]),1,'decimals')+2*dx;
     bins    = edges(1:end-1)+diff(edges);
     
-    data1 = histcounts(dzdt1,edges,'Normalization','probability');
+    data1 = histcounts(dZdt1,edges,'Normalization','probability');
     data2 = histcounts(dzdt2,edges,'Normalization','probability');
     
     area(bins,data1,'LineStyle','-','EdgeColor','n',...
