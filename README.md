@@ -1,2 +1,2 @@
 # morphoSpringNeap
-Versions of the morphoSpringNeap toolobx
+Versions of the morphoSpringNeap toolbox
