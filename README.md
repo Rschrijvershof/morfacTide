@@ -1,2 +1,2 @@
-# morphoTide
-Versions of the morphoTide toolobx
+# morphoSpringNeap
+Versions of the morphoSpringNeap toolobx
