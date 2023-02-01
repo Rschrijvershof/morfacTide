@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Schrijvershof"
+  given-names: "Reinier Alexander"
+  orcid: "https://orcid.org/0000-0003-4178-4406"
+title: "morfacTide"
+version: 0.1
+doi: https://zenodo.org/badge/latestdoi/453933163
+date-released: 2022-05-24
+url: "https://github.com/Rschrijvershof/morfacTide.git"
