@@ -10,7 +10,7 @@ OPT.morTime     = [];
 OPT.morFac      = [];
 OPT.tStart      = datenum(2000,1,1);
 OPT.ampFac      = 1;
-OPT.histScaling = 1;
+OPT.histScaling = 0;
 OPT.plot        = 0;
 
 % User defined
