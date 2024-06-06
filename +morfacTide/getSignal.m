@@ -86,7 +86,7 @@ if ~isempty(OPT.morTime) && ~isempty(OPT.morFac)
         OUT.morTime     = OPT.morTime;
         OUT.morFac      = OPT.morTime/(OPT.nCycles*TdoubleTide);
     elseif strcmp(OPT.type,'springneap')
-        OPT.nCycles = round(tDur/TdoubleTide);
+        OPT.nCycles = round(tDur/TspringNeap);
         OUT.morTime = OPT.morTime;
         OUT.morFac  = OPT.morTime/(OPT.nCycles*TspringNeap);
     end  
