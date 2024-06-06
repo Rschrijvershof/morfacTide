@@ -24,8 +24,6 @@ if nargin > 2
     end
 end
 
-
-
 %% Define and rewrite variables
 
 % Set-up output struct
@@ -201,9 +199,6 @@ switch OPT.type
         end
         
 
-        
-        
-        
         % Method below not possible with scaled amplitudes because
         % amplitude of D2 is not a constant but a timeseries
 %         % Create the signal, equation (1) in Schrijvershof et al. (2023)
